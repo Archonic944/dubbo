@@ -1,6 +1,6 @@
-name: NonDex
+name: NonDex Flaky Test Check
 
-on: [pull_request, workflow_dispatch]
+on: [workflow_dispatch]
 
 permissions:
   contents: read
@@ -14,8 +14,32 @@ jobs:
         with:
           distribution: zulu
           java-version: 21
-      - name: Run NonDex (single pass)
+
+      - name: Build module (skip tests)
         run: |
-          ./mvnw -B \
+          ./mvnw -B install -DskipTests \
+            -pl dubbo-rpc/dubbo-rpc-dubbo -am
+
+      - name: Run test WITHOUT NonDex (should pass)
+        run: |
+          ./mvnw -B -pl dubbo-rpc/dubbo-rpc-dubbo test \
+            -Dtest=org.apache.dubbo.rpc.protocol.dubbo.status.ThreadPoolStatusCheckerTest#test \
+            2>&1 | tee normal-run.log
+
+      - name: Run test WITH NonDex (should fail)
+        continue-on-error: true
+        run: |
+          ./mvnw -B -pl dubbo-rpc/dubbo-rpc-dubbo \
             edu.illinois:nondex-maven-plugin:2.2.1:nondex \
-            -DfailIfNoTests=false -DnondexRuns=1
+            -Dtest=org.apache.dubbo.rpc.protocol.dubbo.status.ThreadPoolStatusCheckerTest#test \
+            -DnondexRuns=10 \
+            2>&1 | tee nondex-run.log
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-build-logs
+          path: |
+            normal-run.log
+            nondex-run.log
